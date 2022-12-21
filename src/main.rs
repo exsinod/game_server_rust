@@ -15,6 +15,7 @@ struct ServerRuntime {
     send_socket: UdpSocket,
     recv_socket: UdpSocket,
     players: HashMap<String, Player>,
+    addrs: HashMap<String, String>,
 }
 
 impl ServerRuntime {
@@ -23,27 +24,44 @@ impl ServerRuntime {
         send_socket
             .set_read_timeout(Some(Duration::new(0, 1000)))
             .unwrap();
+        send_socket
+            .set_write_timeout(Some(Duration::new(0, 1000)))
+            .unwrap();
         let recv_socket = UdpSocket::bind(RECV_SERVER_ADDR).unwrap();
         recv_socket
             .set_read_timeout(Some(Duration::new(0, 1000)))
+            .unwrap();
+        recv_socket
+            .set_write_timeout(Some(Duration::new(0, 1000)))
             .unwrap();
         Self {
             send_socket,
             recv_socket,
             players: HashMap::new(),
+            addrs: HashMap::new(),
         }
     }
 
     fn broadcast(&mut self, msg: &str) {
         for key in self.players.keys() {
             let decoded_src = base64::decode(key).unwrap();
-            let socket_addr = SocketAddr::from_str(str::from_utf8(&decoded_src).unwrap()).unwrap();
-            println!("sending to {:?}", socket_addr);
-            match self.send_socket.send_to(&msg.as_bytes(), socket_addr) {
-                Ok(_) => match self.send_socket.recv(&mut []) {
-                    Ok(_) => {}
-                    _ => {}
-                },
+            match self.addrs.get(str::from_utf8(&decoded_src).unwrap()) {
+                Some(send_src) => {
+                    let socket_addr = SocketAddr::from_str(send_src).unwrap();
+                    println!("sending to {:?}", socket_addr);
+                    match self.send_socket.send_to(&msg.as_bytes(), socket_addr) {
+                        Ok(_) => {
+                            println!("sent {} to {:?}", msg, socket_addr);
+                            match self.send_socket.recv(&mut []) {
+                                Ok(_) => {
+                                    println!("recv from {:?}", socket_addr);
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 _ => {}
             }
         }
@@ -53,7 +71,8 @@ impl ServerRuntime {
         let mut buf = [0; 128];
         match self.recv_socket.recv_from(&mut buf) {
             Ok((number_of_bytes, src)) => {
-                println!("number_of_bytes: {}", number_of_bytes);
+                // println!("number_of_bytes: {}", number_of_bytes);
+                // let src = SocketAddr::from_str("127.0.0.1:8767").unwrap();
                 if number_of_bytes > 1 {
                     let encoded_src = base64::encode(src.to_string());
                     let op_context = Self::get_context_from(&buf, number_of_bytes);
@@ -61,6 +80,23 @@ impl ServerRuntime {
                     println!("player_data in handle_message: {:?}", player_data_vec);
                     // println!("operation: {}", Self::get_operation_from(&buf));
                     return match Self::get_operation_from(&buf) {
+                        "S0;" => {
+                            println!("{:?}", player_data_vec);
+                            let send_addr = player_data_vec[0];
+                            if !self.addrs.contains_key(&src.to_string()) {
+                                self.addrs.insert(src.to_string(), send_addr.to_string());
+                            }
+                            let player_data: Player = Player::new(
+                                "".to_string(),
+                                "".to_string(),
+                                0,
+                                true,
+                                Point::new(0, 0),
+                                Point::new(0, 0),
+                                0,
+                            );
+                            Some(player_data.to_string())
+                        }
                         "L1;" => Some(self.login(encoded_src, player_data_vec)),
                         "M0;" => Some(
                             self.r#move(encoded_src, u8::from_str(player_data_vec[1]).unwrap_or(4)),
@@ -69,7 +105,6 @@ impl ServerRuntime {
                         "E0;" => exit(0),
                         _ => Some("unknown".to_string()),
                     };
-                } else {
                 }
                 match self.recv_socket.send_to(&[], src) {
                     Ok(_) => {}
@@ -213,35 +248,35 @@ async fn main() -> Result<()> {
     let mut runtime: ServerRuntime = ServerRuntime::new();
     let mut messages: VecDeque<String> = VecDeque::new();
     loop {
+        // runtime.send_socket.connect("127.0.0.1:9999")?;
+        // let test = runtime.send_socket.send(b"test")?;
+        // println!("sent test: {:?}", test);
         // println!("what is on the stack: {:?}", messages);
-        tokio::select! {
-            next_msg = pop_front_message(&mut messages)=> {
-                match next_msg {
-                    Some(pop_msg) => {
-                        println!("pop_front: {}", pop_msg);
-                        runtime.broadcast(&pop_msg);
-                    }
-                    _ => {}
-                }
+        // tokio::select! {
+        let next_msg = pop_front_message(&mut messages);
+        match next_msg {
+            Some(pop_msg) => {
+                println!("pop_front: {}", pop_msg);
+                runtime.broadcast(&pop_msg);
             }
-            handled_msg = handle_message(&mut runtime) => {
-                match handled_msg {
-                    Some(msg) => {
-                        println!("handled_msg to push back on stack: {}", msg);
-                        messages.push_back(msg);
-                    }
-                    _ => {}
-                }
-            }
+            _ => {}
         }
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 20));
+        let handled_msg = handle_message(&mut runtime);
+        match handled_msg {
+            Some(msg) => {
+                println!("handled_msg to push back on stack: {}", msg);
+                messages.push_back(msg);
+            }
+            _ => {}
+        }
+        ::std::thread::sleep(Duration::new(0, 1_000));
     }
 }
 
-async fn handle_message(runtime: &mut ServerRuntime) -> Option<String> {
+fn handle_message(runtime: &mut ServerRuntime) -> Option<String> {
     runtime.handle_message()
 }
 
-async fn pop_front_message(messages: &mut VecDeque<String>) -> Option<String> {
+fn pop_front_message(messages: &mut VecDeque<String>) -> Option<String> {
     messages.pop_front()
 }
