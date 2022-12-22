@@ -1,5 +1,5 @@
 use base64;
-use log::{debug, error, trace};
+use log::{debug, trace};
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::net::{SocketAddr, UdpSocket};
@@ -18,7 +18,6 @@ struct ServerRuntime {
     send_socket: UdpSocket,
     recv_socket: UdpSocket,
     players: HashMap<String, Player>,
-    addrs: HashMap<String, String>,
 }
 
 impl ServerRuntime {
@@ -43,7 +42,6 @@ impl ServerRuntime {
             send_socket,
             recv_socket,
             players: HashMap::new(),
-            addrs: HashMap::new(),
         }
     }
 
@@ -81,28 +79,13 @@ impl ServerRuntime {
             Ok((number_of_bytes, src)) => {
                 let mut result_command: Option<String> = None;
                 if number_of_bytes > 1 {
+                    trace!("socket addr: {}", src);
                     let encoded_src = base64::encode(src.to_string());
                     let op_context = Self::get_context_from(&buf, number_of_bytes);
                     let player_data_vec: Vec<&str> = op_context.split(";").collect();
                     debug!("player_data in handle_message: {:?}", player_data_vec);
                     debug!("operation: {}", Self::get_operation_from(&buf));
                     result_command = match Self::get_operation_from(&buf) {
-                        "S0;" => {
-                            let send_addr = player_data_vec[0];
-                            if !self.addrs.contains_key(&src.to_string()) {
-                                self.addrs.insert(src.to_string(), send_addr.to_string());
-                            }
-                            let player_data: Player = Player::new(
-                                "".to_string(),
-                                "".to_string(),
-                                0,
-                                true,
-                                Point::new(0, 0),
-                                Point::new(0, 0),
-                                0,
-                            );
-                            Some(player_data.to_string())
-                        }
                         "L1;" => Some(self.login(encoded_src, player_data_vec)),
                         "M0;" => Some(
                             self.r#move(encoded_src, u8::from_str(player_data_vec[1]).unwrap_or(4)),
@@ -132,6 +115,7 @@ impl ServerRuntime {
     }
 
     fn r#move(&mut self, player_id: String, direction: u8) -> String {
+        trace!("players: {:?}", self.players);
         let player = self.players.get_mut(&player_id);
         match player {
             Some(player) => {
