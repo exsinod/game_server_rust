@@ -1,5 +1,6 @@
 use base64;
-use log::{debug, trace};
+use chrono::{DateTime, Utc};
+use log::{debug, error, trace};
 use std::collections::HashMap;
 use std::fmt;
 use std::net::{SocketAddr, UdpSocket};
@@ -15,7 +16,7 @@ static RECV_SERVER_ADDR: [u8; 4] = [0, 0, 0, 0];
 pub struct ServerRuntime {
     send_socket: UdpSocket,
     recv_socket: UdpSocket,
-    players: HashMap<String, Player>,
+    pub players: HashMap<String, Player>,
     addrs: HashMap<String, [u8; 4]>,
 }
 
@@ -62,14 +63,6 @@ impl ServerRuntime {
                         .send_socket
                         .send_to(&msg.as_bytes(), SocketAddr::from((*client_addr, send_port)))
                     {
-                        Ok(_) => match self.send_socket.recv(&mut []) {
-                            Ok(_) => {
-                                trace!("recv from {:?}", decoded_src);
-                            }
-                            Err(error) => {
-                                trace!("err recv from broadcast: {}", error)
-                            }
-                        },
                         _ => {}
                     }
                 }
@@ -108,13 +101,13 @@ impl ServerRuntime {
                         trace!("handle msg sent")
                     }
                     Err(error) => {
-                        trace!("ack handle msg: {}", error)
+                        error!("ack handle msg: {}", error)
                     }
                 }
                 return result_command;
             }
             Err(error) => {
-                trace!("recv handle msg: {}", error);
+                error!("recv handle msg: {}", error);
             }
         }
         return None;
@@ -133,6 +126,7 @@ impl ServerRuntime {
                     _ => {}
                 }
                 player.velocity = direction;
+                player.last_update = Utc::now();
                 format!("{}", player.to_move_str())
             }
             None => "player not found for move".to_string(),
@@ -174,6 +168,7 @@ impl ServerRuntime {
                 Point::new(0, 0),
                 0,
                 0,
+                Utc::now(),
             );
             self.players.insert(player_id, player_data.clone());
             debug!("New user logs in.  Current players: {:?}", self.players);
@@ -190,7 +185,7 @@ impl ServerRuntime {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 struct Point {
     x: i32,
     y: i32,
@@ -206,8 +201,8 @@ impl fmt::Display for Point {
     }
 }
 
-#[derive(Clone, Debug)]
-struct Player {
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+pub struct Player {
     id: String,
     char_name: String,
     skin: u8,
@@ -216,6 +211,7 @@ struct Player {
     velocity: u8,
     team: u8,
     world_pos: Point,
+    pub last_update: DateTime<Utc>,
 }
 
 impl Player {
@@ -228,6 +224,7 @@ impl Player {
         pos: Point,
         velocity: u8,
         team: u8,
+        last_update: DateTime<Utc>,
     ) -> Self {
         Self {
             id,
@@ -238,6 +235,7 @@ impl Player {
             velocity,
             team,
             world_pos,
+            last_update,
         }
     }
     fn to_move_str(&self) -> String {
@@ -251,6 +249,7 @@ impl Player {
             self.velocity.to_string(),
             self.team.to_string(),
             self.world_pos.to_string(),
+            self.last_update.to_string(),
         ];
         let move_str = props.join(";");
         move_str

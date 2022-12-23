@@ -8,6 +8,5 @@ edition = "2021"
 [dependencies]
 log = "*"
 env_logger = "*"
-tokio = {version="*", features=["full"]}
-futures = "*"
 base64 = "*"
+chrono = "*"
