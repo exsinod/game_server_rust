@@ -10,3 +10,7 @@ log = "*"
 env_logger = "*"
 base64 = "*"
 chrono = "*"
+tokio = { version = "*", features = ["full"] }
+unqlite = "*"
+serde_json ="*"
+serde = { version = "*", features = ["derive"] }
