@@ -11,7 +11,7 @@ env_logger = "*"
 base64 = "*"
 chrono = "*"
 tokio = { version = "*", features = ["full"] }
-unqlite = "*"
+futures = "*"
 serde_json ="*"
 serde = { version = "*", features = ["derive"] }
 redis = "*"
